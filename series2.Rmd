@@ -1,0 +1,135 @@
+---
+title: "Series 2"
+author: "Christian Holberg"
+date: "9/23/2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## Exercise 1
+
+Loading data
+
+```{r}
+traffic_data <- tibble(
+  year = seq(2006, 2016, 1),
+  traffic_jams = c(112, 109, 91, 98, 139, 150, 168, 149, 149, 135, 140)
+)
+head(traffic_data)
+```
+
+Scatter plot of data
+
+```{r}
+ggplot(traffic_data, aes(x = year, y = traffic_jams)) + geom_point()
+```
+
+
+### a)
+
+Defining function for computing the Running Mean Smoother
+
+```{r}
+myRMS <- function(start, finish){
+  window <- 3
+  step <- 1
+  num_steps <- floor((finish-start)/step)
+  running_mean <- numeric(num_steps+1)
+  for (i in 1:(num_steps+1)){
+    center <- start + i*step - 1
+    y_range <- traffic_data$traffic_jams[(traffic_data$year <= center + window/2 &
+                                  traffic_data$year >= center - window/2)]
+    running_mean[i] <- mean(y_range)
+  }
+  return(running_mean)
+}
+```
+
+Using Running Mean Smoother and drawing solution
+
+```{r}
+ggplot(traffic_data, aes(x = year)) + 
+  geom_point(aes(y = traffic_jams)) +
+  geom_line(aes(y = myRMS(2006, 2016)))
+```
+
+### b)
+
+Computing the running mean with the build in `ksmooth()` function and plotting it in the scatter plot.
+
+```{r}
+running_mean <- with(traffic_data, ksmooth(year, traffic_jams, "box", 3.0, x.points = 2006:2016))
+ggplot(traffic_data, aes(x = year)) + 
+  geom_point(aes(y = traffic_jams)) +
+  geom_line(aes(y = running_mean$y))
+```
+
+They look exactly the same, which was to be expected.
+
+### c)
+
+If the (unnormalized) density of a Gaussian distribution with standard deviation \(\sigma=2\) and mean \(\mu\) is given by
+
+$$exp\left(-\frac{(\mu-x)^2}{2\sigma^2}\right)=exp\left(-\frac{(x-x_i)^2}{8}\right)$$
+
+then the weights of the corresponding Gaussian Kernel Smoother must be
+
+$$w_i = exp\left(-\frac{(x-x_i)^2}{\lambda}\right)$$
+with \(\lambda = 8\). Below is a function for computing the Gaussian Kernel Smoother with \(\lambda = 8\)
+
+```{r}
+myGKS <- function(start, finish, num_steps){
+  step <- (finish-start)/num_steps
+  running_mean <- numeric(num_steps+1)
+  for (i in 1:(num_steps+1)){
+    center <- start + (i-1)*step
+    w <- exp(-((center - traffic_data$year)^2)/8)
+    running_mean[i] <- (w %*% traffic_data$traffic_jams)/sum(w)
+  }
+  return(running_mean)
+}
+```
+
+Computing and drawing solution in the scatter plot.
+
+```{r}
+ggplot() + 
+  geom_point(aes(x = year, y = traffic_jams), data = traffic_data) +
+  geom_line(aes(x = seq(2006, 2016, 0.1), y = myGKS(2006, 2016, 100)))
+```
+
+### d)
+
+Now using the built in `ksmooth()` function. From the `ksmooth()` documentation it follows that a bandwidth of `qnorm(0.75)*2*4` should correspond to the Gaussian with a standard deviation of 2.
+
+```{r}
+running_mean <- with(traffic_data, ksmooth(year, traffic_jams, "normal", bandwidth = qnorm(0.75)*2*4, 
+                                           x.points = seq(2006, 2016, 0.1)))
+ggplot() + 
+  geom_point(aes(x = year, y = traffic_jams), data = traffic_data) +
+  geom_line(aes(x = running_mean$x, y = running_mean$y))
+```
+
+### e)
+
+LOESS smoothers for different values of `degree` and `span`.
+
+```{r}
+loess1 <- with(traffic_data, loess.smooth(year, traffic_jams, 2/3, 1, "gaussian", evaluation = 101))
+loess2 <- with(traffic_data, loess.smooth(year, traffic_jams, 1, 1, "gaussian", evaluation = 101))
+loess3 <- with(traffic_data, loess.smooth(year, traffic_jams, 2/3, 2, "gaussian", evaluation = 101))
+
+ggplot() +
+  geom_point(aes(x = year, y = traffic_jams), data = traffic_data) +
+  geom_line(aes(x = loess1$x, y = loess1$y), col = "red") +
+  geom_line(aes(x = loess2$x, y = loess2$y), col = "blue") +
+  geom_line(aes(x = loess3$x, y = loess3$y), col = "green")
+```
+
+All three smoothers in one plot
